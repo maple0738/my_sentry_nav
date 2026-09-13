@@ -28,6 +28,7 @@ RUN apt update && apt install -y \
     ros-humble-navigation2 \
     ros-humble-nav2-bringup \
     ros-humble-slam-toolbox \
+    ros-humble-pointcloud-to-laserscan \    
     ros-humble-asio-cmake-module \
     ros-humble-ament-cmake-auto \
     x11-xserver-utils \
