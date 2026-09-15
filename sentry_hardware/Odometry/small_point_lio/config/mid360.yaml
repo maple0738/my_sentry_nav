@@ -14,7 +14,7 @@ small_point_lio:
         space_downsample_leaf_size: 0.5            # 点云降采样时使用的栅格大小
 
         # IMU处理
-        gravity: [0.0, 0.0, -9.810]                # 重力
+        gravity: [-0.001711,0.740676,-0.665347]   # 重力
         fix_gravity_direction: true                # 是否收集前200个IMU数据修正重力方向，重力的大小依旧从gravity参数获得
         check_satu: true                           # 是否开启IMU的数据饱和检查
         satu_acc: 3.0                              # IMU的加速度饱和阈值

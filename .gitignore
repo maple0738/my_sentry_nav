@@ -13,8 +13,9 @@ __pycache__/
 *.pyc
 *.pyo
 
-# IDE（scode 的本地配置，可不提交；想团队共享就删掉这行）
+# IDE
 .vscode/
+.marscode/
 
 # 系统杂项
 .DS_Store

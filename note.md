@@ -2,11 +2,88 @@
  * @Author: maple0738 1573764313@qq.com
  * @Date: 2026-08-28 15:14:39
  * @LastEditors: maple0738 1573764313@qq.com
- * @LastEditTime: 2026-09-12 23:33:00
+ * @LastEditTime: 2026-09-13 21:59:47
  * @FilePath: /my_sentry_nav/note.md
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
 -->
 # 开发笔记
+
+## 快速启动流程（Mini PC 开机到跑起来）
+
+> 以下所有操作均在 **Mini PC 宿主机** 上执行，除非标注"容器内"。
+
+### 1. 连接 Mini PC（远程 SSH）
+```bash
+ssh mas@192.168.77.7
+```
+
+### 2. 配置雷达网口
+```bash
+# 查看有线网口名称（如 eno1 / enp2s0 / eth0）
+ip addr
+
+# 配置 IP（必须和 mid360_driver/config/params.yaml 的 host_ip 一致）
+sudo ip addr add 192.168.1.50/24 dev eno1
+```
+> 雷达出厂设定往 `192.168.1.50` 发 UDP 数据，网口必须配成这个地址才能收到。
+
+### 3. 插雷达
+- 网线插到刚才配好 IP 的网口
+- 供电线插上，雷达指示灯亮起即为正常
+
+### 4. 启动 Docker 容器
+```bash
+cd ~/gyx_nav/my_sentry_nav
+
+# 首次使用：构建镜像 + 启动容器
+sudo docker compose up -d --build
+
+# 非首次（镜像已构建过）：直接启动已停止的容器
+sudo docker compose up -d
+```
+
+> 判断是否已构建过：`sudo docker ps -a | grep my_sentry`，看到 `my_sentry` 容器就说明构建过，直接 `up -d` 即可。
+
+### 5. 赋予 X11 可视化权限
+```bash
+xhost +si:localuser:root
+```
+
+### 6. 进入容器 + 编译 + source
+```bash
+sudo docker exec -it my_sentry bash --login
+
+# 容器内：
+cd /home/my_sentry_ws
+colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+source install/setup.bash
+```
+> 如果代码没改，跳过 `colcon build`，直接 `source install/setup.bash` 即可。
+
+### 7. 启动建图
+```bash
+# 容器内：
+ros2 launch sentry_bringup mapping_launch.py
+```
+
+RViz 会自动打开。如果不需要可视化（纯命令行模式），关掉 RViz 或启动时加参数（后续可配）。
+
+### 8. 保存地图
+```bash
+# 容器内，另开终端：
+sudo docker exec -it my_sentry bash --login
+source /home/my_sentry_ws/install/setup.bash
+ros2 run nav2_map_server map_saver_cli -f /home/my_sentry_ws/src/sentry_bringup/maps/my_map
+```
+> 文件会通过挂载自动存到宿主机 `~/gyx_nav/my_sentry_nav/sentry_bringup/maps/` 下。
+
+### 9. 启动导航（建图完成后）
+```bash
+# 容器内：
+ros2 launch sentry_bringup nav_launch.py
+```
+
+---
 
 ## 附录 1：开发机 ↔ Mini PC 文件传输
 
