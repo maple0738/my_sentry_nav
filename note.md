@@ -2,7 +2,7 @@
  * @Author: maple0738 1573764313@qq.com
  * @Date: 2026-08-28 15:14:39
  * @LastEditors: maple0738 1573764313@qq.com
- * @LastEditTime: 2026-09-13 21:59:47
+ * @LastEditTime: 2026-09-23 18:45:22
  * @FilePath: /my_sentry_nav/note.md
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
 -->
@@ -30,6 +30,14 @@ sudo ip addr add 192.168.1.50/24 dev eno1
 ### 3. 插雷达
 - 网线插到刚才配好 IP 的网口
 - 供电线插上，雷达指示灯亮起即为正常
+```bash
+cd /home/my_sentry_ws
+colcon build --packages-select configure_boot_mode
+
+cd /home/my_sentry_ws/build/configure_boot_mode
+export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+./configure_boot_mode /home/my_sentry_ws/src/sentry_hardware/Livox/configure_boot_mode/config.json
+```
 
 ### 4. 启动 Docker 容器
 ```bash
@@ -63,7 +71,7 @@ source install/setup.bash
 ### 7. 启动建图
 ```bash
 # 容器内：
-ros2 launch sentry_bringup mapping_launch.py
+ros2 launch sentry_bringup mapping_3d_launch.py
 ```
 
 RViz 会自动打开。如果不需要可视化（纯命令行模式），关掉 RViz 或启动时加参数（后续可配）。
@@ -82,6 +90,68 @@ ros2 run nav2_map_server map_saver_cli -f /home/my_sentry_ws/src/sentry_bringup/
 # 容器内：
 ros2 launch sentry_bringup nav_launch.py
 ```
+
+---
+
+## 启动流程速查（平时 vs 重新构建 vs 启动桥）
+
+### 平时启动（代码没改，最快）
+```bash
+# 宿主机：
+sudo docker compose up -d                    # 启动已构建过的容器（无 --build）
+xhost +si:localuser:root                     # 仅需 RViz 可视化时执行
+sudo docker exec -it my_sentry bash --login
+
+# 容器内：
+cd /home/my_sentry_ws
+source install/setup.bash                    # 代码没改，跳过 colcon build
+ros2 launch sentry_bringup nav_launch.py     # 一键导航（桥 ros2_comm 已自动启动）
+```
+
+### 重新构建（改了代码 / Dockerfile）
+```bash
+# 宿主机：
+cd ~/gyx_nav/my_sentry_nav
+sudo docker compose up -d --build            # 改了 Dockerfile 才需要 --build
+
+# 容器内：
+sudo docker exec -it my_sentry bash --login
+cd /home/my_sentry_ws
+colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+source install/setup.bash
+```
+> `build/`、`install/`、`log/` 是命名卷，`docker compose down` **不会删**它们。
+> 所以**只改源码、没改 Dockerfile** 时：不用 `--build`，直接 `up -d` + `colcon build` 即可。
+> 只有改了 Dockerfile（依赖、环境等）才需要 `up -d --build` 重建镜像。
+
+### 启动桥（foxglove_bridge，Windows 可视化）
+包已装（Dockerfile `ros-humble-foxglove-bridge`），不用再装。启动命令：
+
+```bash
+# 容器内：
+ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+# 或等价：ros2 run foxglove_bridge foxglove_bridge
+```
+
+它起一个 WebSocket 服务，默认监听 **8765** 端口。Windows 上打开 Foxglove Studio → Open connection → Rosbridge/WebSocket → 填：
+
+```
+ws://192.168.77.7:8765
+```
+
+> `192.168.77.7` 是 Mini PC 的 WiFi IP，Windows 和 Mini PC 需在同一局域网。连不上先 `ping 192.168.77.7`。
+> 同样 `network_mode: host`，bridge 直接绑宿主机 8765，**不需要 `-p` 端口映射**。
+
+### ⚠️ 启动必查：mid360 崩溃排查
+雷达驱动一启动就 SIGABRT（日志 `process has died ... exit code -6`），后续 LIO 无法初始化、`odom` 帧不存在，全是这一个根因。原因几乎都是驱动构造函数里 `bind(192.168.1.50, 56301/56401)` 失败。进容器前在宿主机确认：
+
+```bash
+ip addr show                              # 连雷达的网口有没有 192.168.1.50
+ss -lunp | grep -E '56301|56401'          # 端口有没有被残留进程占用
+ps aux | grep -E 'mid360|livox'           # 有没有没退干净的驱动进程
+```
+- 没有 `192.168.1.50` → `sudo ip addr add 192.168.1.50/24 dev <网口名>`
+- 端口被占 → `kill` 掉残留进程再启动
 
 ---
 
@@ -629,3 +699,154 @@ sentry_bringup/launch/nav_launch.py      # 导航启动文件
 | bt_navigator | nav2_bt_navigator | 行为树调度 |
 | behavior_server | nav2_behaviors | 恢复行为 |
 | lifecycle_manager | nav2_lifecycle_manager | 生命周期管理 |
+
+---
+
+## 第 10 步：3D 占据栅格建图 (rog_map)
+
+### 10.1 背景
+在 2D SLAM（slam_toolbox）已跑通的基础上，引入学长代码中的 `rog_map` 模块，实现基于 3D 点云的实时占据栅格建图，替代原有的 2D 激光建图方案。
+
+### 10.2 rog_map 是什么
+rog_map 不是 SLAM，而是**3D 体素占据图**——把空间切成小立方体（体素），每个体素标记为 占据/空闲/未知。
+
+| 模块 | 功能 | 输出 |
+|------|------|------|
+| small_point_lio | SLAM 定位（我在哪？） | `/Odometry` + `/cloud_registered` |
+| rog_map | 障碍感知（周围有什么？） | 3D 占据栅格 + 2D 投影层 |
+
+### 10.3 数据流
+```
+mid360_driver → /mid360_driver/lidar → small_point_lio
+                                           │
+                              ┌────────────┼────────────┐
+                              ↓            ↓            ↓
+                         /Odometry   /cloud_registered  TF(odom→base_link)
+                              ↓            ↓
+                           rog_map_node
+                              ↓
+                    ┌─────────────────┐
+                    ↓         ↓        ↓
+              /rog_map/   /rog_map/  /rog_map/
+              occupied   layer_type  layer_value  ...
+```
+
+### 10.4 移植过程
+
+#### 10.4.1 复制代码
+```bash
+cp -r /home/mas/gyx_nav/mas_nav/mas2027_perception/rog_map sentry_hardware/
+```
+
+#### 10.4.2 编译 + 安装配置
+- `CMakeLists.txt`：添加 `install(DIRECTORY config/ DESTINATION share/${PROJECT_NAME})`（注意不带斜杠）
+- `rog_map_params.yaml`：配置输入话题、坐标系、分辨率等
+
+#### 10.4.3 创建 Launch 文件
+创建 `sentry_bringup/launch/mapping_3d_launch.py`，整合节点：
+
+| 节点 | 包 | 说明 |
+|------|-----|------|
+| robot_state_publisher | sentry_description | URDF 静态 TF |
+| mid360_driver | mid360_driver | 雷达驱动 |
+| small_point_lio | small_point_lio | 点云里程计 |
+| rog_map | rog_map | 3D 占据栅格建图 |
+| rviz2 | rviz2 | 可视化 |
+
+同时创建 `test_radar_launch.py`（不含 rog_map，仅测试雷达 + 里程计）。
+
+### 10.5 配置文件演进
+
+#### 10.5.1 初始配置（来自学长）
+```yaml
+resolution: 0.05            # 5cm 精度
+map_size: [10.0, 10.0, 2.5]  # 10×10×2.5m 窗口
+```
+
+#### 10.5.2 实测问题：PC 重启（OOM）
+```
+rog_map_node-4]  -- [ROG WARN] Unfinished frame cnt > 1 (dropped 1)
+```
+- 原因：`resolution: 0.05` 时体素数 = 200×200×50 = 200 万，机器撑不住
+- 同时 `map_sliding.threshold: -1.0` 等于关掉了滑动窗口，数据只增不减
+
+#### 10.5.3 最终配置（稳定版）
+```yaml
+resolution: 0.1             # 放宽到 10cm，体素降到 25 万
+map_size: [10.0, 10.0, 2.5] # 保持学长窗口大小
+update_period_ms: 50        # 50ms 帧间隔（原 20ms）
+ray_range: [0.3, 5.0]       # 5m 射线（原 10m）
+map_sliding:
+  enable: true
+  threshold: 0.2             # 机器人偏离 0.2m 就滑动地图
+```
+
+### 10.6 rog_map 参数详解
+
+| 参数 | 说明 | 学长值 | 当前值 |
+|:--|:--|:--:|:--:|
+| `resolution` | 体素大小（m） | 0.05 | 0.1 |
+| `map_size` | 地图窗口 [x,y,z]（m） | [10,10,2.5] | [10,10,2.5] |
+| `update_period_ms` | 帧间隔（ms） | 20 | 50 |
+| `odom_timeout` | 里程计超时（s） | 0.08 | 0.08 |
+| `keep_time` | 体素保留时间（s） | 0.8 | 0.8 |
+| `clear_time` | 体素清除时间（s） | 1.2 | 1.2 |
+| `ray_range` | 射线范围 [min, max]（m） | [0.3, 10.0] | [0.3, 5.0] |
+| `p_hit/p_miss` | 命中/未命中概率 | 0.9/0.45 | 0.9/0.45 |
+| `map_sliding.threshold` | 滑动阈值（m） | 0.2 | 0.2 |
+
+### 10.7 关键话题
+
+| 话题 | 类型 | 说明 |
+|:--|:--|:--|
+| `/rog_map/occupied` | PointCloud2 | 3D 占据栅格点云（红色） |
+| `/rog_map/raw_occupied` | PointCloud2 | 未膨胀版占据栅格 |
+| `/rog_map/layer_type` | OccupancyGrid | 2D 投影分类图（用 Map 显示） |
+| `/rog_map/layer_value` | OccupancyGrid | 2D 投影障碍值 |
+| `/rog_map/field` | PointCloud2 | ESDF 距离场 |
+| `/rog_map/decay_cells` | PointCloud2 | 正在衰减/清理的体素 |
+| `/rog_map/map_bound` | MarkerArray | 地图边界框 |
+
+### 10.8 rog_map vs 2D SLAM
+
+| 对比项 | 2D SLAM (slam_toolbox) | 3D 占据栅格 (rog_map) |
+|:--|:--|:--|
+| 输入 | `/scan`（2D 激光） | `/cloud_registered`（3D 点云） |
+| 输出 | `/map`（2D 栅格） | `/rog_map/occupied` + 投影层 |
+| 优势 | 成熟稳定、有回环检测 | 3D 信息完整、障碍分类细致 |
+| 局限 | 丢失高度信息 | 计算量大、依赖高性能 CPU |
+| 用途 | 导航定位 | 避障 + 3D 环境感知 |
+
+### 10.9 测试全流程
+```bash
+# 1. 编译
+colcon build --packages-select rog_map --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+source install/setup.bash
+
+# 2. 启动 3D 建图
+ros2 launch sentry_bringup mapping_3d_launch.py
+
+# 3. RViz 设置
+# Fixed Frame → odom
+# Add → /rog_map/occupied（PointCloud2，ColorTransformer→FlatColor，选红色）
+# Add → /rog_map/layer_type（Map，显示 2D 分类）
+
+# 4. 验证数据流
+ros2 topic list | grep rog_map
+ros2 node info /rog_map
+
+# 5. 性能监控
+htop                    # 看 CPU/内存占用
+# 如果有 Unfinished frame 警告，调大 update_period_ms 或缩小 ray_range
+```
+
+### 10.10 常见问题
+
+| 问题 | 原因 | 解决 |
+|:--|:--|:--|
+| `Parameter file path is not a file` | CMakeLists 安装路径问题 | `install(DIRECTORY config DESTINATION share/${PROJECT_NAME})`（不带斜杠） |
+| `decay.clear_time must be greater than decay.keep_time` | 参数未加载，用了默认值 | 确认 YAML 路径正确，检查 launch 中的 parameters 路径 |
+| `New subscription discovered... requesting incompatible QoS` | RViz 默认 RELIABLE，rog_map 发 BEST_EFFORT | RViz 中改话题的 Reliability Policy 为 Best Effort |
+| `Unfinished frame cnt > 1 (dropped 1)` | 建图速度跟不上点云帧率 | 降低 resolution、加大 update_period_ms、缩小 ray_range |
+| `Odom timeout, skip cloud callback` | 里程计更新频率低于超时阈值 | 加大 odom_timeout（0.05→0.08） |
+| PC 重启/OOM | 体素太多 + 地图不滑动 | 确保 map_sliding.threshold > 0，map_size 合理 |

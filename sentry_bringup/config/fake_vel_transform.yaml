@@ -1,0 +1,12 @@
+# Nav2 固定朝向速度参考系
+fake_vel_transform:
+  ros__parameters:
+    odom_topic: /Odometry
+    robot_base_frame: base_link
+    fake_robot_base_frame: base_link_fake
+    local_plan_topic: /local_plan
+    cmd_spin_topic: /cmd_spin
+    input_cmd_vel_topic: /cmd_vel_nav_smoothed
+    output_cmd_vel_topic: /cmd_vel
+    output_odom_topic: /Odometry_world_fixed
+    init_spin_speed: 0.0

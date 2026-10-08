@@ -28,7 +28,8 @@ RUN apt update && apt install -y \
     ros-humble-navigation2 \
     ros-humble-nav2-bringup \
     ros-humble-slam-toolbox \
-    ros-humble-pointcloud-to-laserscan \    
+    ros-humble-pointcloud-to-laserscan \
+    ros-humble-foxglove-bridge \
     ros-humble-asio-cmake-module \
     ros-humble-ament-cmake-auto \
     x11-xserver-utils \
@@ -39,7 +40,9 @@ RUN apt update && apt install -y \
     libomp-dev \
     libasio-dev\
     ros-humble-pcl-ros ros-humble-pcl-conversions ros-humble-visualization-msgs ros-humble-rosbag2-storage-mcap ros-humble-rqt-tf-tree libceres-dev \
-    clang-tidy
+    clang-tidy \
+    libeigen3-dev \
+    libpcl-dev
 
 # 5. 初始化 rosdep
 RUN mkdir -p /etc/ros/rosdep/sources.list.d && \

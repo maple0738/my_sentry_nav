@@ -1,0 +1,81 @@
+/**:
+  ros__parameters:
+    rog_map:
+      frame_id: "odom"
+      resolution: 0.05
+      inflation_resolution: 0.05
+      map_size: [10.0, 10.0, 2.5]
+      fix_map_origin: [0.0, 0.0, 0.0]
+
+      virtual_ground_height: -1.5
+      virtual_ceil_height: 3.0
+
+      map_sliding:
+        enable: true
+        threshold: 0.2
+
+      ros_callback:
+        enable: true
+        cloud_topic: "/cloud_registered"
+        odom_topic: "/Odometry"
+        odom_timeout: 0.08
+        update_period_ms: 20
+
+      raycasting:
+        enable: true
+        batch_update_size: 1
+        ray_range: [0.3, 10.0]
+        local_update_box: [10.0, 10.0, 2.0]
+        p_hit: 0.9
+        p_miss: 0.45
+        p_occ: 0.85
+        p_free: 0.499
+        parallel_enable: false
+
+      decay:
+        enable: true
+        keep_time: 0.8
+        clear_time: 1.2
+
+      projection:
+        enable: true
+        scan_z_relative_to_robot: true
+        scan_z_min_abs: -1.2
+        scan_z_max_abs: 2.75
+        unknown_as_occupied: false
+        min_observed_voxels: 1
+        surface_height_delta_max: 0.1
+        wall_height_delta_min: 0.80
+        wall_occupancy_ratio_min: 0.90
+        tunnel_height_delta_min: 0.25
+        tunnel_height_delta_max: 0.40
+        tunnel_occupancy_ratio_max: 0.45
+        passable_as_free: true
+        hysteresis_enable: false
+        obstacle_hold_time: 1.5
+        mask_filter_en: true
+        fill_occ_min: 8
+        denoise_occ_max: 0
+
+      field:
+        enable: true
+        inflation_radius: 0.0
+        max_distance: 6.0
+        min_distance: -3.0
+        interpolation: quadratic
+        update_rate: 20.0
+
+      performance:
+        enable: true
+        summary_csv_enable: false
+        detailed_csv_enable: false
+        print_enable: false
+        dirty_column_enable: true
+        dirty_full_ratio: 0.95
+        dirty_full_period_s: 0.5
+
+      visualization:
+        enable: true
+        frame_id: "odom"
+        rate: 5.0
+        range: [10.0, 10.0, 1.5]

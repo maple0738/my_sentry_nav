@@ -4,12 +4,17 @@ small_point_lio:
         imu_topic: /mid360_driver/imu                      # IMU话题名
         lidar_type: custom_mid360_driver              # 雷达类型 livox_custom_msg, livox_pointcloud2, custom_mid360_driver, unilidar
         lidar_frame: lidar_link                   # 雷达坐标系
+        odom_frame: odom                           # 里程计父坐标系
+        base_frame: base_link                      # 机器人本体坐标系
+        publish_odom_tf: true                      # 发布 odom→base_link TF
+        align_odom_with_gravity: true              # 用重力水平化里程计
         save_pcd: false                            # 是否保存点云
 
         # 点云过滤
         point_filter_num: 1                        # 多少个点取一个点
-        min_distance: 0.5                          # 点云半径最小值，小于该值会被过滤
-        max_distance: 1000.0                       # 点云半径最大值，大于该值会被过滤
+        blind_center: [0.000, 0.0184, -0.1851]    # 盲区中心（base_link原点在雷达系中的坐标）
+        min_distance: 0.38                         # 最小有效距离（刚好裹住车身）
+        max_distance: 300.0                        # 最大有效距离
         space_downsample: true                     # 是否启用点云降采样
         space_downsample_leaf_size: 0.5            # 点云降采样时使用的栅格大小
 

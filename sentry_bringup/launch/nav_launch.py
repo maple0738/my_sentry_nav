@@ -21,11 +21,11 @@ def generate_launch_description():
 
     declare_map = DeclareLaunchArgument(
         "map",
-        default_value=os.path.join(bringup_dir, "map", "my_map.yaml"),
+        default_value=os.path.join(bringup_dir, "maps", "lab3.yaml"),
         description="Full path to map yaml file"
     )
     declare_use_rviz = DeclareLaunchArgument(
-        "use_rviz", default_value="True"
+        "use_rviz", default_value="False"
     )
     declare_autostart = DeclareLaunchArgument(
         "autostart", default_value="True",
@@ -42,13 +42,13 @@ def generate_launch_description():
                     {"yaml_filename": map_yaml}],
     )
 
-    # ===== AMCL 定位 =====
-    amcl = Node(
-        package="nav2_amcl",
-        executable="amcl",
-        name="amcl",
+    # ===== map->odom 静态 TF（关闭 AMCL，先让 map 与 odom 完全一致） =====
+    static_map_odom_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="map_odom_static_tf",
         output="screen",
-        parameters=[os.path.join(bringup_dir, "config", "nav2_params.yaml")],
+        arguments=["0", "0", "0", "0", "0", "0", "map", "odom"],
     )
 
     # ===== nav2 导航节点 =====
@@ -58,6 +58,7 @@ def generate_launch_description():
         name="controller_server",
         output="screen",
         parameters=[os.path.join(bringup_dir, "config", "nav2_params.yaml")],
+        remappings=[("cmd_vel", "/cmd_vel_nav")],   # ← 加这一行
     )
     planner_server = Node(
         package="nav2_planner",
@@ -79,6 +80,9 @@ def generate_launch_description():
         name="behavior_server",
         output="screen",
         parameters=[os.path.join(bringup_dir, "config", "nav2_params.yaml")],
+        # 恢复行为的速度也必须走 /cmd_vel_nav，否则会绕过 fake_vel_transform
+        # 直接发到 /cmd_vel —— 既不叠 /cmd_spin，坐标系也是错的。
+        remappings=[("cmd_vel", "/cmd_vel_nav")],
     )
     bt_navigator = Node(
         package="nav2_bt_navigator",
@@ -94,12 +98,16 @@ def generate_launch_description():
         output="screen",
         parameters=[os.path.join(bringup_dir, "config", "nav2_params.yaml")],
     )
+    # 速度平滑器：controller/behavior 的 /cmd_vel_nav -> /cmd_vel_nav_smoothed，
+    # 20Hz 持续发布（空闲时发 0），保证 fake_vel_transform 下游永不静默。
     velocity_smoother = Node(
         package="nav2_velocity_smoother",
         executable="velocity_smoother",
         name="velocity_smoother",
         output="screen",
         parameters=[os.path.join(bringup_dir, "config", "nav2_params.yaml")],
+        remappings=[("cmd_vel", "/cmd_vel_nav"),
+                    ("cmd_vel_smoothed", "/cmd_vel_nav_smoothed")],
     )
     lifecycle_manager = Node(
         package="nav2_lifecycle_manager",
@@ -108,11 +116,12 @@ def generate_launch_description():
         output="screen",
         parameters=[os.path.join(bringup_dir, "config", "nav2_params.yaml"),
                     {"autostart": autostart},
-                    {"node_names": [
-                        "controller_server", "planner_server", "smoother_server",
-                        "behavior_server", "bt_navigator", "waypoint_follower",
-                        "velocity_smoother", "map_server", "amcl"
-                    ]}],
+        {"node_names": [
+            "map_server",
+            "controller_server", "planner_server", "smoother_server",
+            "behavior_server", "bt_navigator", "waypoint_follower",
+            "velocity_smoother"
+        ]}]
     )
 
     # ===== 底层：robot_state_publisher + driver + LIO + pointcloud_to_laserscan =====
@@ -146,6 +155,23 @@ def generate_launch_description():
         remappings=[("cloud_in", "/cloud_registered"), ("scan", "/scan")],
     )
 
+    # ===== ros2_comm 底盘通讯 =====
+    ros2_comm_node = Node(
+        package="ros2_comm",
+        executable="ros2_comm_node",
+        name="ros2_comm_node",
+        output="screen",
+        emulate_tty=True,
+    )
+
+    fake_vel_transform_node = Node(
+    package="fake_vel_transform",
+    executable="fake_vel_transform_node",
+    name="fake_vel_transform",
+    output="screen",
+    parameters=[os.path.join(bringup_dir, "config", "fake_vel_transform.yaml")],
+    )
+
     # ===== RViz =====
     rviz = Node(
         package="rviz2",
@@ -168,7 +194,7 @@ def generate_launch_description():
 
     # 导航
     ld.add_action(map_server)
-    ld.add_action(amcl)
+    ld.add_action(static_map_odom_tf)
     ld.add_action(planner_server)
     ld.add_action(controller_server)
     ld.add_action(smoother_server)
@@ -177,6 +203,8 @@ def generate_launch_description():
     ld.add_action(waypoint_follower)
     ld.add_action(velocity_smoother)
     ld.add_action(lifecycle_manager)
+    ld.add_action(fake_vel_transform_node)
+    ld.add_action(ros2_comm_node)
 
     ld.add_action(rviz)
     return ld

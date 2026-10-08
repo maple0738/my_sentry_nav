@@ -2,7 +2,7 @@
 Author: maple0738 1573764313@qq.com
 Date: 2026-09-12 22:04:30
 LastEditors: maple0738 1573764313@qq.com
-LastEditTime: 2026-09-12 22:31:15
+LastEditTime: 2026-09-24 21:57:06
 FilePath: /my_sentry_nav/sentry_bringup/launch/mapping_launch.py
 Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
 '''
@@ -24,7 +24,7 @@ def generate_launch_description():
     # ===== 声明参数 =====
     use_rviz = LaunchConfiguration("use_rviz")
     declare_use_rviz = DeclareLaunchArgument(
-        "use_rviz", default_value="True", description="Whether to start RViz"
+        "use_rviz", default_value="False", description="Whether to start RViz"
     )
 
     # ===== 1. robot_state_publisher =====
