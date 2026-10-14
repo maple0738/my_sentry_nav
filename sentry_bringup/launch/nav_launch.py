@@ -42,14 +42,18 @@ def generate_launch_description():
                     {"yaml_filename": map_yaml}],
     )
 
-    # ===== map->odom 静态 TF（关闭 AMCL，先让 map 与 odom 完全一致） =====
-    static_map_odom_tf = Node(
-        package="tf2_ros",
-        executable="static_transform_publisher",
-        name="map_odom_static_tf",
+    # ===== map->odom 动态 TF（GICP 重定位：由 odom_localizer 发，替代静态恒等） =====
+    odom_localizer = Node(
+        package="odom_localizer",
+        executable="odom_localizer_node",
+        name="odom_localizer",
         output="screen",
-        arguments=["0", "0", "0", "0", "0", "0", "map", "odom"],
+        emulate_tty=True,
+        parameters=[os.path.join(
+            get_package_share_directory("odom_localizer"), "config", "params.yaml"
+        )],
     )
+
 
     # ===== nav2 导航节点 =====
     controller_server = Node(
@@ -194,7 +198,7 @@ def generate_launch_description():
 
     # 导航
     ld.add_action(map_server)
-    ld.add_action(static_map_odom_tf)
+    ld.add_action(odom_localizer)
     ld.add_action(planner_server)
     ld.add_action(controller_server)
     ld.add_action(smoother_server)
